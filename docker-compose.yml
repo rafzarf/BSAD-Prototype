@@ -1,0 +1,101 @@
+services:  
+  influxdb:
+    image: influxdb:2.0-alpine
+    container_name: influxdb
+    ports:
+      - "${INFLUXDB_PORT:-8086}:8086"
+    environment:
+      - INFLUXDB_INIT_MODE=setup
+      - INFLUXDB_INIT_USERNAME=${INFLUXDB_INIT_USERNAME}
+      - INFLUXDB_INIT_PASSWORD=${INFLUXDB_INIT_PASSWORD}
+      - INFLUXDB_INIT_ORG=${INFLUXDB_INIT_ORG}
+      - INFLUXDB_INIT_BUCKET=${INFLUXDB_INIT_BUCKET}
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+    networks:
+      - influxdb_nk
+
+  postgres:
+    image: postgres:alpine
+    container_name: postgres_db
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+    networks:
+      - influxdb_nk
+
+  mosquitto:
+    image: eclipse-mosquitto
+    container_name: mosquitto
+    ports:
+      - "${MQTT_PORT:-1883}:1883"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - mosquitto_data:/mosquitto/data
+    networks:
+      - influxdb_nk
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      # SMTP settings
+      - GF_SMTP_ENABLED=true
+      - GF_SMTP_HOST=${SMTP_HOST:-smtp.example.com:587}         # SMTP server and port
+      - GF_SMTP_USER=${SMTP_USER:-your_smtp_username}           # SMTP username
+      - GF_SMTP_PASSWORD=${SMTP_PASSWORD:-your_smtp_password}   # SMTP password
+      - GF_SMTP_SKIP_VERIFY=${SMTP_SKIP_VERIFY:-true}           # Skip TLS verification if needed
+      - GF_SMTP_FROM_ADDRESS=${SMTP_FROM_ADDRESS:-grafana@example.com}  # From email address
+      - GF_SMTP_FROM_NAME=${SMTP_FROM_NAME:-Grafana}   
+    depends_on:
+      - influxdb
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - influxdb_nk
+
+  nodered:
+    image: nodered/node-red:latest
+    container_name: nodered
+    ports:
+      - "${NODERED_PORT:-1880}:1880"
+    environment:
+      - MQTT_BROKER=${MQTT_BROKER}
+      - INFLUXDB_URL=${INFLUXDB_URL}
+    depends_on:
+      - mosquitto
+    volumes:
+      - nodered_data:/data
+    networks:
+      - influxdb_nk
+
+volumes:
+  postgres_data:
+  influxdb_data:
+  mosquitto_data:
+  grafana_data:
+  nodered_data:
+
+networks:
+  influxdb_nk:
+    external: true
